@@ -1,14 +1,17 @@
 # SSLCommerz-NodeJS-Backend
-
-```bash const express = require('express');
+```bash
+npm install sslcommerz-lts
+```
+```bash
+const express = require('express');
 const cors = require('cors');
 const SSLCommerzPayment = require('sslcommerz-lts');
 
 const app = express();
 const port = 3000;
 
-const store_id = 'jerin68f915155bd58';
-const store_passwd = 'jerin68f915155bd58@ssl';
+const store_id = 'store=id';
+const store_passwd = 'store-pass';
 const is_live = false;
 
 app.use(cors());
@@ -54,4 +57,4 @@ app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
 
-```bash
+```
