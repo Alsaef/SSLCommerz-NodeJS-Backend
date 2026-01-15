@@ -20,6 +20,7 @@ const is_live = false;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Payment endpoint
 app.post('/my-payment', async (req, res) => {
