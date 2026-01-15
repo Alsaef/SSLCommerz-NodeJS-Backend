@@ -27,6 +27,7 @@ connectDB();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Payment Initialization
 app.post('/my-payment', async (req: Request, res: Response) => {
