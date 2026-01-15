@@ -105,7 +105,7 @@ app.post('/my-payment', async (req: Request, res: Response) => {
   }
 });
 
-// Success URL
+// Success URL (Browser redirect / Frontend POST, optional SSL validation if val_id provided)
 app.post('/payment/success/:tran_id', async (req: Request, res: Response) => {
   const { tran_id } = req.params;
   const { val_id } = req.body;
@@ -119,6 +119,23 @@ app.post('/payment/success/:tran_id', async (req: Request, res: Response) => {
 
     await paymentsCollection.updateOne({ tran_id }, { $set: { status: 'FAILED', updatedAt: new Date() } });
     res.redirect('http://localhost:5173/payment-failed');
+  } catch (error) {
+    console.error('Success URL error:', error);
+    res.status(500).send('Internal server error');
+  }
+});
+
+app.post('/payment/success/:tran_id', async (req: Request, res: Response) => {
+  const { tran_id } = req.params;
+
+  try {
+    await paymentsCollection.updateOne(
+      { tran_id },
+      { $set: { status: 'SUCCESS', paidAt: new Date() } }
+    );
+
+    // Frontend redirect
+    res.redirect(`http://localhost:5173/payment-success?tran_id=${tran_id}`);
   } catch (error) {
     console.error('Success URL error:', error);
     res.status(500).send('Internal server error');
