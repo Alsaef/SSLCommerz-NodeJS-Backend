@@ -1,4 +1,8 @@
-# SSLCommerz-NodeJS-Backend
+# SSLCommerz NodeJS Backend (MERN Style, Dynamic Params)
+
+This is a full backend setup for integrating **SSLCommerz payment gateway** with a MERN stack. It handles payment initialization, success, fail, cancel, and optional IPN (Instant Payment Notification). The backend is fully MongoDB compatible and uses dynamic params for secure transaction tracking.
+
+---
 ```bash
 npm install sslcommerz-lts
 ```
@@ -68,148 +72,138 @@ app.listen(port, () => {
 
 ```
 
-// ===============================
-// Success URL (Frontend redirect only)
-// ===============================
+## Features
 
-``` bash
-app.post('/payment/success', async (req, res) => {
-const { tran_id } = req.body;
-res.redirect(`http://localhost:5173/payment-success?tran_id=${tran_id}`);
-});
+* Payment initialization with SSLCommerz.
+* Dynamic `tran_id` handling via URL params.
+* Database integration using MongoDB.
+* Handles `success`, `fail`, and `cancel` URLs.
+* Optional IPN for final payment confirmation.
+* Redirects user to frontend with transaction details.
+
+---
+
+## Environment Setup
+
+Edit the store credentials and MongoDB URI in the code:
+
+```javascript
+const store_id = 'your-store-id';
+const store_passwd = 'your-store-password';
+const is_live = false; // true for production
+
+const client = new MongoClient('mongodb://127.0.0.1:27017');
 ```
- // ✅ Only now mark SUCCESS
-```bash
-app.post('/payment/success', async (req, res) => {
-  const { tran_id, val_id } = req.body;
 
-  try {
-    // 1️⃣ Optional: SSLCommerz validate call
-    const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
-    const validation = await sslcz.validate({ val_id });
+---
 
-    if (validation.status === 'VALID') {
-      // ✅ Only now mark SUCCESS
-      await paymentsCollection.updateOne(
-        { tran_id },
-        {
-          $set: {
-            status: 'SUCCESS',
-            paidAt: new Date(),
-            gatewayData: validation,
-          },
-        }
-      );
+## Backend Code Example
 
-      return res.redirect(
-        `http://localhost:5173/payment-success?tran_id=${tran_id}`
-      );
-    }
+```javascript
+const express = require('express');
+const cors = require('cors');
+const SSLCommerzPayment = require('sslcommerz-lts');
+const { MongoClient } = require('mongodb');
 
-    // validation failed
+const app = express();
+const port = 3000;
+
+const store_id = 'store-id';
+const store_passwd = 'store-pass';
+const is_live = false;
+
+const client = new MongoClient('mongodb://127.0.0.1:27017');
+let paymentsCollection;
+
+async function connectDB() {
+  await client.connect();
+  const db = client.db('sslcommerzDB');
+  paymentsCollection = db.collection('payments');
+}
+connectDB();
+
+app.use(cors());
+app.use(express.json());
+
+app.post('/my-payment', async (req, res) => {
+  const tran_id = `REF${Date.now()}`;
+  const data = { /* payment data */ };
+  await paymentsCollection.insertOne({ tran_id, status: 'PENDING', createdAt: new Date() });
+  const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+  const apiResponse = await sslcz.init(data);
+  res.json({ url: apiResponse.GatewayPageURL });
+});
+
+// Success URL (Browser redirect / Frontend POST, optional SSL validation if val_id provided)
+app.post('/payment/success/:tran_id', async (req, res) => {
+  const { tran_id } = req.params;
+  const { val_id } = req.body;
+  const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+  const validation = await sslcz.validate({ val_id });
+  if (validation.status === 'VALID') {
+    await paymentsCollection.updateOne({ tran_id }, { $set: { status: 'SUCCESS', paidAt: new Date(), gatewayData: validation } });
+    return res.redirect(`http://localhost:5173/payment-success?tran_id=${tran_id}`);
+  }
+  await paymentsCollection.updateOne({ tran_id }, { $set: { status: 'FAILED', updatedAt: new Date() } });
+  res.redirect('http://localhost:5173/payment-failed');
+});
+
+
+app.post('/payment/success/:tran_id', async (req, res) => {
+  const { tran_id } = req.params;
     await paymentsCollection.updateOne(
       { tran_id },
-      { $set: { status: 'FAILED', updatedAt: new Date() } }
+      { $set: { status: 'SUCCESS', paidAt: new Date() } }
     );
 
-    res.redirect('http://localhost:5173/payment-failed');
-  } catch (error) {
-    console.error(error);
-    res.status(500).send('Internal server error');
-  }
+    // Frontend redirect
+    res.redirect(`http://localhost:5173/payment-success?tran_id=${tran_id}`);
 });
 
-```
 
-// ===============================
-// Fail URL
-// ===============================
-```bash
-app.post('/payment/fail', async (req, res) => {
-const { tran_id } = req.body;
-
-
-await paymentsCollection.updateOne(
-{ tran_id },
-{ $set: { status: 'FAILED', updatedAt: new Date() } }
-);
-
-
-res.redirect('http://localhost:5173/payment-failed');
+app.post('/payment/fail/:tran_id', async (req, res) => {
+  const { tran_id } = req.params;
+  await paymentsCollection.updateOne({ tran_id }, { $set: { status: 'FAILED', updatedAt: new Date() } });
+  res.redirect('http://localhost:5173/payment-failed');
 });
-```
 
-
-// ===============================
-// Cancel URL
-// ===============================
-
-```bash
-app.post('/payment/cancel', async (req, res) => {
-const { tran_id } = req.body;
-
-
-await paymentsCollection.updateOne(
-{ tran_id },
-{ $set: { status: 'CANCELED', updatedAt: new Date() } }
-);
-
-
-res.redirect('http://localhost:5173/payment-canceled');
+app.post('/payment/cancel/:tran_id', async (req, res) => {
+  const { tran_id } = req.params;
+  await paymentsCollection.updateOne({ tran_id }, { $set: { status: 'CANCELED', updatedAt: new Date() } });
+  res.redirect('http://localhost:5173/payment-canceled');
 });
-```
 
-```bash
-User pays real money
-      ↓
-SSLCommerz server validates
-      ↓
-IPN → https://api.myapp.com/payment/ipn
-      ↓
-DB status = SUCCESS
-```
-
-
-// ===============================
-// IPN (FINAL PAYMENT CONFIRMATION)
-// ===============================
-```bash
 app.post('/payment/ipn', async (req, res) => {
-try {
-const { tran_id, status, val_id } = req.body;
+  const { tran_id, status, val_id } = req.body;
+  if (status !== 'VALID') return res.status(400).json({ message: 'Invalid payment status' });
+  const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
+  const validation = await sslcz.validate({ val_id });
+  if (validation.status === 'VALID') {
+    await paymentsCollection.updateOne({ tran_id }, { $set: { status: 'SUCCESS', paidAt: new Date(), gatewayData: validation } });
+    return res.status(200).json({ message: 'Payment confirmed' });
+  }
+  res.status(400).json({ message: 'Payment validation failed' });
+});
 
-
-if (status !== 'VALID') {
-return res.status(400).json({ message: 'Invalid payment status' });
-}
-
-
-const sslcz = new SSLCommerzPayment(store_id, store_passwd, is_live);
-const validation = await sslcz.validate({ val_id });
-
-
-if (validation.status === 'VALID') {
-await paymentsCollection.updateOne(
-{ tran_id },
-{
-$set: {
-status: 'SUCCESS',
-paidAt: new Date(),
-gatewayData: validation,
-},
-}
-);
-
-
-return res.status(200).json({ message: 'Payment confirmed' });
-}
-
-
-res.status(400).json({ message: 'Payment validation failed' });
-} catch (error) {
-console.error(error);
-res.status(500).json({ error: 'IPN handling error' });
-}
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
 });
 ```
+
+---
+
+## Frontend Integration
+
+* Success page: `/payment-success?tran_id=<tran_id>`
+* Fail page: `/payment-failed`
+* Cancel page: `/payment-canceled`
+
+Frontend can use `tran_id` to fetch payment status from MongoDB.
+
+---
+
+## License
+
+MIT
+
 
